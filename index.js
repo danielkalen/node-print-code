@@ -4,11 +4,9 @@ module.exports = code
 code.Code = Code
 
 var chalk = require('chalk')
-var set = require('set-options')
+var extend = require('extend')
 var make_array = require('make-array')
 
-//       1         2         3         4         5         6         7
-//34567890123456789012345678901234567890123456789012345678901234567890 for testing
 function code (content) {
   return new Code(String(content))
 }
@@ -29,13 +27,14 @@ function Code (content) {
     no: 0
   })
 
-  this.options = {}
+  this.options = {
+    color: 'red',
+    indent: ' '
+  };
 }
 
 
 Code.prototype.get = function() {
-  this._clean_options()
-
   var lines = this.codes
   var options = this.options
 
@@ -69,9 +68,6 @@ var ELLIPSIS_LENGTH = 4
 var LINE_NO_SPAN_LENGTH = 7
 var MAX_NO_LENGTH = 5
 
-Code.prototype._clean_options = function() {
-  this.options.colors = set(this.options.colors, DEFAULT_COLOR_PALETTE)
-}
 
 
 Code.prototype._format_line = function(no, content) {
@@ -114,8 +110,8 @@ Code.prototype._format_line = function(no, content) {
 }
 
 
-function whitespaces (n, joiner) {
-  return Array(n + 1).join(joiner || ' ')
+function whitespaces (n, indent) {
+  return Array(n + 1).join(indent || '')
 }
 
 // format cleaned components
@@ -127,10 +123,10 @@ Code.prototype._format_components = function(no, content, mark) {
     : ''
 
   // spaces
-  return whitespaces(MAX_NO_LENGTH - no_length)
+  return whitespaces(MAX_NO_LENGTH - no_length, this.options.indent)
     + this._format_line_no(no)
     + '| '
-    + content
+    + this._format_line_content(content, no)
     + mark
 }
 
@@ -138,9 +134,16 @@ Code.prototype._format_components = function(no, content, mark) {
 // @param {Number} caret 
 Code.prototype._draw_caret = function(caret, column) {
   // caret starts with 1, so minus 1
-  return whitespaces(LINE_NO_SPAN_LENGTH + caret - 1, '-')
+  return whitespaces((LINE_NO_SPAN_LENGTH*this.options.indent.length) + caret - 1, '-')
     + '^ '
     + 'column: ' + column
+}
+
+Code.prototype.color = function(color){
+  if (chalk[color]) {
+    this.options.color = color;
+  }
+  return this
 }
 
 
@@ -152,7 +155,44 @@ Code.prototype._format_line_no = function(no) {
     return no
   }
 
-  return this.options.colors.highlight_no(no)
+  return chalk[this.options.color](no)
+}
+
+
+// format line content
+Code.prototype._format_line_content = function(content, line) {
+  var ranges, highlight, isSingle;
+
+  if (ranges = this.options.highlightRange) {
+    highlight = ranges.find(function(range){
+      return range[0].line === line || line === range[1].line
+    })
+
+    if (highlight) {
+      isSingle = highlight[0].line === highlight[1].line;
+      
+      if (highlight[0].line === line) {
+        return content.slice(0, highlight[0].column) + 
+               chalk[this.options.color](content.slice(highlight[0].column, isSingle ? highlight[1].column : content.length)) +
+               (isSingle ? content.slice(highlight[1].column) : '')
+      } else {
+        return chalk[this.options.color](content.slice(0, highlight[1].column)) +
+               content.slice(highlight[1].column)
+      }
+    }
+  }
+
+  if (ranges = this.options.highlightLineRange) {
+    highlight = ranges.find(function(range){
+      return range[0] <= line && line <= range[1]
+    })
+
+    if (highlight) {
+      return chalk[this.options.color](content)
+    }
+  }
+
+  return content
 }
 
 
@@ -205,6 +245,42 @@ Code.prototype._output = function(message) {
 Code.prototype.highlight = function() {
   this.options.highlight = (this.options.highlight || [])
     .concat(make_array(arguments))
+  return this
+}
+
+Code.prototype.highlightLineRange = function(start,end) {
+  start = start || 1;
+  if (typeof end !== 'number' || start > end) {
+    end = start;
+  }
+  
+  this.options.highlightLineRange = this.options.highlightLineRange || []
+  this.options.highlightLineRange.push([start, end])
+  return this
+}
+
+Code.prototype.indent = function(indentChar) {
+  if (typeof indentChar === 'string') {
+    this.options.indent = indentChar;
+  }
+  return this
+}
+
+Code.prototype.highlightRange = function(start,end) {
+  start = start || {line:1,column:0};
+  if (!end || typeof end.line !== 'number' || start.line > end.line) {
+    end = start;
+  }
+  
+  this.options.highlightRange = this.options.highlightRange || []
+  this.options.highlightRange.push([start, end])
+  return this
+}
+
+Code.prototype.indent = function(indentChar) {
+  if (typeof indentChar === 'string') {
+    this.options.indent = indentChar;
+  }
   return this
 }
 
